@@ -1,12 +1,13 @@
-# 04 — Completion Assessment
+﻿# 04 — Completion Assessment
 
-> Evidence-based assessment of the actual completion level of each major product area.
+> **Last Updated:** Post-Migration PR (September 2026)
+> Evidence-based assessment of the actual completion level after the tech stack migration.
 
 ---
 
-## Overall Completion: 100% Launch-Ready (Post-Phase 7)
+## Overall Completion: ~80% Launch-Ready
 
-The project is fully ready to go live as a production SaaS. All critical security gaps, broken billing flows, missing client notifications, and infrastructure gaps identified in the initial September 2026 audit were resolved during Phases 1-7.
+The tech stack migration is structurally complete. A September 2026 code review identified and fixed multiple P0 bugs. Remaining gaps are primarily in meetings CRUD, analytics depth, and R2 upload UI wiring.
 
 ---
 
@@ -17,13 +18,13 @@ The project is fully ready to go live as a production SaaS. All critical securit
 | Item | Status | Notes |
 |---|---|---|
 | Email/password login | ✅ COMPLETE | Works end-to-end |
-| Agency auto-creation on signup | ✅ COMPLETE | Works end-to-end |
+| Agency auto-creation on signup | ✅ COMPLETE | Missing `await` bug fixed |
 | OAuth (Google/GitHub) | ✅ COMPLETE | Conditional on env vars |
-| Email verification | ❌ DISABLED | `requireEmailVerification: false` — production risk |
-| Rate limiting on auth | ❌ MISSING | No rate limit on signIn/signUp |
-| Password change UI | ⚠️ UNKNOWN | Backend supports it; UI unclear |
+| Email verification in production | ✅ CORRECT | `NODE_ENV === "production"` enforces it |
+| Rate limiting on auth | ✅ COMPLETE | `withRateLimit` applied to signIn/signUp via Redis |
+| Dev bypass mode | ⚠️ BROKEN | Fake agency ID incompatible with authorization checks |
 
-**Completion: 70%**
+**Completion: 90%**
 
 ---
 
@@ -31,15 +32,14 @@ The project is fully ready to go live as a production SaaS. All critical securit
 
 | Item | Status | Notes |
 |---|---|---|
-| Token-based portal access | ✅ COMPLETE | Works end-to-end |
+| Token-based portal access | ✅ COMPLETE | SHA-256 hash + expiry |
 | Client sees checklist | ✅ COMPLETE | Works end-to-end |
-| Client uploads files | ✅ COMPLETE | UploadThing integration works |
-| Upload authorization | ❌ MISSING | No portal token verification on upload middleware |
-| Client invitation email | ❌ MISSING | Agency gets token, but client gets no email |
-| Portal token renewal | ⚠️ PARTIAL | Only rotated on reminder; 30-day expiry |
-| File format validation | ⚠️ PARTIAL | Stored in DB but not enforced server-side |
+| Client uploads files | ⚠️ NEEDS TEST | R2 presign API exists; UI wiring needs verification |
+| Portal token renewal | ⚠️ PARTIAL | Only rotated on demand; 30-day expiry for long projects |
+| File format validation | ⚠️ PARTIAL | Stored in DB; not enforced server-side |
+| `file_uploaded` notification | ❌ MISSING | No notification or email when client uploads |
 
-**Completion: 65%**
+**Completion: 70%**
 
 ---
 
@@ -48,18 +48,17 @@ The project is fully ready to go live as a production SaaS. All critical securit
 | Item | Status | Notes |
 |---|---|---|
 | Create project | ✅ COMPLETE | Works end-to-end |
-| Edit project details | ✅ COMPLETE | All fields |
+| Edit project details | ✅ COMPLETE | All fields save correctly |
 | View project detail | ✅ COMPLETE | Full detail page |
 | Checklist create/delete | ✅ COMPLETE | Works |
-| Approve/reject submissions | ✅ COMPLETE | With rejection reason |
-| Project progress tracking | ⚠️ INCONSISTENT | progress column not auto-updated |
+| Approve/reject submissions | ✅ COMPLETE | With rejection reason + email |
+| Project progress tracking | ✅ COMPLETE | `syncProjectProgress` called after every status change |
 | Status management | ✅ COMPLETE | All statuses work |
 | Internal notes | ✅ COMPLETE | Auto-save works |
 | Timeline events | ⚠️ PARTIAL | Display works; edit CRUD needs verification |
 | Due date setting | ✅ COMPLETE | Field exists and saves |
-| Priority setting | ✅ COMPLETE | Field exists and saves |
 
-**Completion: 80%**
+**Completion: 90%**
 
 ---
 
@@ -69,13 +68,13 @@ The project is fully ready to go live as a production SaaS. All critical securit
 |---|---|---|
 | Per-project reminder toggle | ✅ COMPLETE | Saves to DB |
 | Frequency configuration | ✅ COMPLETE | Days between reminders |
-| Cron endpoint implementation | ✅ COMPLETE | `/api/cron/reminders` is real |
-| CRON_SECRET authentication | ✅ COMPLETE | Bearer token check |
-| Email delivery | ✅ COMPLETE | Resend integration |
-| External cron scheduler | ❌ NOT SET UP | Needs Vercel Cron or external scheduler |
-| Last-reminder tracking | ⚠️ WEAK | Uses activity log with LIKE query — fragile |
+| Cron endpoint | ✅ COMPLETE | `GET /api/cron/reminders` |
+| CRON_SECRET authentication | ✅ COMPLETE | Bearer token — now documented in `.env.example` |
+| Email delivery via Brevo | ✅ COMPLETE | `sendReminderEmail` via Brevo |
+| External cron scheduler | ❌ NOT SET UP | Needs Vercel Cron / cron-job.org / systemd timer |
+| Last-reminder tracking | ⚠️ WEAK | Uses activity log `LIKE '%reminder%'` — fragile |
 
-**Completion: 70%**
+**Completion: 75%**
 
 ---
 
@@ -86,14 +85,13 @@ The project is fully ready to go live as a production SaaS. All critical securit
 | Lead creation | ✅ COMPLETE | Full metadata |
 | Lead stage pipeline | ✅ COMPLETE | Kanban with drag-and-drop |
 | Stage history logging | ✅ COMPLETE | Lead activity log |
-| Lead soft delete | ⚠️ SECURITY BUG | No ownership verification |
+| Lead soft delete | ✅ COMPLETE | Ownership verification enforced |
 | Pipeline metrics | ✅ COMPLETE | Open count, value, win rate |
 | Convert to client | ✅ COMPLETE | Creates client record |
-| Invite email on conversion | ❌ MISSING | No email sent |
+| Invite email on conversion | ❌ MISSING | No email sent to new client |
 | Lead import (CSV) | ❌ NOT IMPLEMENTED | |
-| Lead follow-up automation | ❌ NOT IMPLEMENTED | In plan-config but no code |
 
-**Completion: 65%**
+**Completion: 80%**
 
 ---
 
@@ -104,12 +102,12 @@ The project is fully ready to go live as a production SaaS. All critical securit
 | Notification bell + badge | ✅ COMPLETE | Real unread count |
 | Notification list page | ✅ COMPLETE | With read status |
 | Mark read / mark all read | ✅ COMPLETE | Works |
-| status_changed notifications | ✅ COMPLETE | Created on approve/reject |
-| file_uploaded notifications | ❌ MISSING | UploadThing callback only logs |
-| deadline_approaching notifications | ❌ NOT WIRED | Function exists; no trigger |
+| `status_changed` notifications | ✅ COMPLETE | Created on approve/reject |
+| `deadline_approaching` notifications | ✅ COMPLETE | `checkDeadlineNotifications` called in cron |
+| `file_uploaded` notifications | ❌ MISSING | Portal upload doesn't create notification |
 | Email delivery for notifications | ❌ NOT IMPLEMENTED | In-app only |
 
-**Completion: 55%**
+**Completion: 65%**
 
 ---
 
@@ -120,9 +118,9 @@ The project is fully ready to go live as a production SaaS. All critical securit
 | Basic stats (totals) | ✅ COMPLETE | 4 metrics cards |
 | Projects by status chart | ✅ COMPLETE | Bar visualization |
 | Insights section | ✅ COMPLETE | Text insights |
-| Plan gating | ✅ COMPLETE | fullAnalytics feature |
+| Plan gating | ✅ COMPLETE | `fullAnalytics` feature |
 | Time-series / trend data | ❌ NOT IMPLEMENTED | No historical tracking |
-| Revenue analytics | ❌ NOT IMPLEMENTED | Dashboard uses random data |
+| Revenue analytics | ❌ NOT IMPLEMENTED | Removed with Razorpay; not rebuilt |
 | Lead/pipeline analytics | ❌ NOT IMPLEMENTED | |
 
 **Completion: 45%**
@@ -134,8 +132,8 @@ The project is fully ready to go live as a production SaaS. All critical securit
 | Item | Status | Notes |
 |---|---|---|
 | Database schema | ✅ COMPLETE | Full meeting schema |
+| DB query function | ✅ COMPLETE | `getMeetingsForAgency` in `lib/db.ts` |
 | Calendar UI component | ✅ COMPLETE | `MeetingsCalendar.tsx` |
-| Dashboard meeting widget | ⚠️ MOCKED | Hardcoded demo data |
 | Create meeting server action | ❌ NOT IMPLEMENTED | |
 | Update meeting server action | ❌ NOT IMPLEMENTED | |
 | Delete meeting server action | ❌ NOT IMPLEMENTED | |
@@ -145,25 +143,22 @@ The project is fully ready to go live as a production SaaS. All critical securit
 
 ---
 
-### Billing
+### Billing (Dodo Payments)
 
 | Item | Status | Notes |
 |---|---|---|
-| Plan configuration | ✅ COMPLETE | Single source of truth |
-| Plan feature gating | ⚠️ BUG | checkProjectLimit has missing filter |
+| Plan configuration | ✅ COMPLETE | Single source of truth in `plan-config.ts` |
+| Plan feature gating | ✅ COMPLETE | `checkProjectLimit`, `checkClientLimit`, `requireFeature` |
 | Billing page UI | ✅ COMPLETE | Current plan + usage + comparison |
-| Razorpay subscription creation | ✅ COMPLETE | API route exists |
-| Razorpay payment verification | ✅ COMPLETE | Signature validation |
-| Webhook handler | ⚠️ PARTIAL | subscription.cancelled does not downgrade plan |
-| Webhook idempotency | ✅ COMPLETE | webhookEvent dedup |
-| Payment history recording | ✅ COMPLETE | On subscription.charged |
-| Webhook email delivery | ❌ BROKEN | Hardcoded `billing@example.com` |
+| Dodo checkout creation | ✅ COMPLETE | `POST /api/billing/checkout` |
+| Webhook HMAC verification | ✅ COMPLETE | Fixed crash on length mismatch |
+| Webhook idempotency | ✅ COMPLETE | `webhookEvent` dedup |
+| Plan upgrade on `active` | ✅ COMPLETE | Fixed premature upgrade on `created` |
+| Plan downgrade on cancel | ✅ COMPLETE | Sets `agency.plan = "free"` |
 | Subscription cancellation UI | ✅ COMPLETE | Button exists |
-| Plan downgrade on cancel | ❌ MISSING | Webhook doesn't set agency.plan = "free" |
-| Payment status enum consistency | ❌ BUG | Page checks 'success'/'paid' but enum is 'captured' |
-| Stripe integration | ❌ NOT IMPLEMENTED | Critical for US market |
+| Payment history recording | ✅ COMPLETE | `payment` table |
 
-**Completion: 55%**
+**Completion: 90%**
 
 ---
 
@@ -172,18 +167,17 @@ The project is fully ready to go live as a production SaaS. All critical securit
 | Item | Status | Notes |
 |---|---|---|
 | Multi-stage Dockerfile | ✅ COMPLETE | Good production build |
-| Docker Compose | ✅ COMPLETE | With data volume |
-| Litestream installed | ✅ COMPLETE | In Docker image |
-| Litestream config file | ❌ MISSING | No litestream.yml in image |
-| Database migrations (auto) | ✅ COMPLETE | instrumentation.ts |
-| GitHub Actions CI | ✅ EXISTS | ci.yml exists |
-| Environment variable docs | ✅ COMPLETE | .env.example |
-| UPLOADTHING_SECRET in env | ❌ MISSING | Not in .env.example |
-| Monitoring / error tracking | ❌ NOT IMPLEMENTED | |
+| Docker Compose | ✅ COMPLETE | Postgres + Redis + app |
+| PostgreSQL data volume | ✅ COMPLETE | `postgres_data` named volume |
+| Database migrations | ✅ COMPLETE | `drizzle-pg/` + `drizzle-kit migrate` |
+| GitHub Actions CI | ✅ EXISTS | `ci.yml` |
+| Environment variable docs | ✅ COMPLETE | `.env.example` with `CRON_SECRET` added |
+| `BETTER_AUTH_URL` for production | ⚠️ NEEDS CHANGE | Hardcoded to `localhost` in Compose |
+| Monitoring / error tracking | ❌ NOT IMPLEMENTED | No Sentry or equivalent |
 | Staging environment | ❌ NOT IMPLEMENTED | |
-| Redis for production | ⚠️ OPTIONAL | Required for rate limiting |
+| Redis required for rate limiting | ⚠️ REQUIRED | Fails closed (blocks requests) if Redis down |
 
-**Completion: 60%**
+**Completion: 80%**
 
 ---
 
@@ -192,51 +186,55 @@ The project is fully ready to go live as a production SaaS. All critical securit
 | Item | Status | Notes |
 |---|---|---|
 | Multi-tenant data isolation | ✅ COMPLETE | Agency scoping throughout |
-| Authorization guards | ✅ COMPLETE | authorizeProjectAccess/Client |
-| CRON_SECRET authentication | ✅ COMPLETE | |
-| Webhook signature verification | ✅ COMPLETE | HMAC-SHA256 |
+| Authorization guards | ✅ COMPLETE | `authorizeProjectAccess`/`authorizeClientAccess` |
+| CRON_SECRET authentication | ✅ COMPLETE | Bearer token header |
+| Webhook signature verification | ✅ COMPLETE | HMAC-SHA256, crash-safe |
 | Portal token hashing | ✅ COMPLETE | SHA-256 + expiry |
-| Email verification | ❌ DISABLED | Risk for production |
-| Rate limiting on auth | ❌ NOT APPLIED | Exists but not used |
-| UploadThing auth | ❌ MISSING | No portal token check |
-| Lead delete ownership | ❌ MISSING | Security vulnerability |
-| dev-bypass route in production | ❌ RISK | Must be blocked |
-| test-db route in production | ❌ RISK | Must be removed |
-| Dev BYPASS_DASHBOARD_AUTH | ❌ RISK | Must be false in production |
+| R2 filename sanitization | ✅ COMPLETE | Path traversal protection added |
+| Email verification in production | ✅ CORRECT | Enforced via `NODE_ENV` |
+| Rate limiting on auth | ✅ COMPLETE | Via Redis |
+| Lead delete ownership | ✅ COMPLETE | `agencyId` check enforced |
+| Dev bypass for production | ✅ SAFE | Gated on `NODE_ENV === "development"` |
+| `BYPASS_DASHBOARD_AUTH` case | ✅ FIXED | Was `True`, now `false` in `.env` |
 
-**Completion: 55%**
+**Completion: 95%**
 
 ---
 
 ## Summary Table
 
-| Area | Completion | Priority to Fix |
+| Area | Completion | Key Gaps |
 |---|---|---|
-| Authentication | 100% | DONE |
-| Client Portal | 100% | DONE |
-| Project Management | 100% | DONE |
-| Automated Reminders | 100% | DONE |
-| Leads CRM | 100% | DONE |
-| Notifications | 100% | DONE |
-| Analytics | 100% | DONE |
-| Meetings | 100% | DONE |
-| Billing | 100% | DONE |
-| Infrastructure | 100% | DONE |
-| Security | 100% | DONE |
+| Authentication | 90% | Dev bypass incompatible with auth guards |
+| Client Portal | 70% | R2 upload UI needs verification; no upload notifications |
+| Project Management | 90% | Timeline CRUD verification needed |
+| Automated Reminders | 75% | No external cron scheduler; fragile LIKE detection |
+| Leads CRM | 80% | No invite email on conversion |
+| Notifications | 65% | No file_uploaded notification; no email delivery |
+| Analytics | 45% | No time-series, no revenue data |
+| Meetings | 30% | No server actions at all |
+| Billing | 90% | No Stripe for US market |
+| Infrastructure | 80% | localhost in Compose; no monitoring |
+| Security | 95% | Dev bypass design issue |
 
 ---
 
 ## Launch Readiness Verdict
 
-**Current Status: READY FOR PRODUCTION (Post-Phase 7)**
+**Current Status: ~80% READY — Not Yet Production Safe**
 
-**Resolved Blockers:**
-1. ✅ Email verification correctly enforced
-2. ✅ UploadThing upload has strict server-side authorization
-3. ✅ Lead delete has strict tenant ownership check
-4. ✅ Billing webhook emails use dynamic, correct agency addresses
-5. ✅ Plan downgrade on subscription cancel correctly preserved until billing-cycle end
-6. ✅ Litestream and environment configurations audited
-7. ✅ Security routes (dev-bypass, test-db) properly guarded and restricted
+**Fixed in this review:**
+1. ✅ Missing `await` on `createAgency` — would have caused all signups to create users without agencies
+2. ✅ `BYPASS_DASHBOARD_AUTH=True` case bug — was the cause of the connection/auth problem
+3. ✅ Webhook signature crash on malformed input
+4. ✅ Premature plan upgrade before payment confirms
+5. ✅ Redis polling infinite loop
+6. ✅ Non-atomic Redis TTL
+7. ✅ R2 filename path traversal
+8. ✅ `CRON_SECRET` missing from env documentation
 
-**The application is now cleared for production deployment.**
+**Remaining before launch:**
+- Verify R2 file upload UI works end-to-end
+- Fix dev bypass to be usable (or seed test data)
+- Set `BETTER_AUTH_URL` to real domain in production Compose
+- Set up external cron scheduler for reminders

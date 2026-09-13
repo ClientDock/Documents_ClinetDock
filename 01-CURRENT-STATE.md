@@ -1,50 +1,48 @@
-# 01 — Current State of ClientDock
+﻿# 01 — Current State of ClientDock
 
-> **Historical Note (Post-Phase 7):** This document represents the initial audit state from September 2026. All "Incomplete" and "Broken" items listed below—including security vulnerabilities, missing authorization, mock data usage, and billing issues—have been fully resolved during the Phase 1–7 implementation. The current system is 100% production ready.
+> **Last Updated:** Post-Migration PR (September 2026)
+> **Note:** This document reflects the actual state of the codebase after the September 2026 tech stack migration (SQLite→Postgres, Razorpay→Dodo, Resend→Brevo, UploadThing→R2). All old provider references have been removed.
 
 ---
 
 ## Authentication System
 
-**Status: MOSTLY COMPLETE (90%)**
+**Status: 95% COMPLETE**
 
 ### What Works
 - Email/password signup and login via Better Auth
-- Automatic agency creation on signup (`signUpAction` → `createAgency`)
+- Automatic agency creation on signup (`signUpAction` → `createAgency`) — missing `await` bug **fixed**
 - Session management (7-day sessions, 5-minute cookie cache)
 - Optional Google OAuth and GitHub OAuth (env-var controlled)
-- Password reset email flow (templates exist, Resend integration)
+- Password reset email flow (Brevo integration)
+- Email verification templates exist; enforced in production via `NODE_ENV === "production"`
+- Rate limiting on signIn/signUp via Redis (`withRateLimit`)
 - Account linking between OAuth providers
-- User deletion support
-- Session-based server-side auth via `getCurrentSession()`
 
-### What Is Incomplete or Problematic
-- **Email verification is DISABLED in production config** (`requireEmailVerification: false` in `src/lib/auth.ts:44`). This means any email can be used without verification. This is a security and trust issue for a production SaaS.
-- **No rate limiting on login attempts at the action level** — `withRateLimit` exists in `src/lib/rate-limit.ts` but is NOT applied in `signInAction` or `signUpAction`. The rate limit module requires Redis, which may not be available.
-- **Redirect after login** — Login page redirects to `/dashboard` (needs verification this works correctly for OAuth flows too).
+### Known Issues
+- **Dev bypass incompatible with authorization** — `BYPASS_DASHBOARD_AUTH=true` returns a fake agency ID that won't match real DB records, causing all project/client CRUD to fail with "Forbidden" in dev bypass mode.
 
 ---
 
 ## Agency Dashboard — Main Page
 
-**Status: FUNCTIONAL BUT NEEDS IMPROVEMENT (75%)**
+**Status: 85% COMPLETE**
 
 ### What Works
-- Real stats cards (Total Clients, In Progress, Completed, Delayed) — queries DB
+- Real stats cards (Total Clients, In Progress, Completed, Delayed) — queries PostgreSQL
 - Project list with status filters and progress bars
 - Recent Activity feed from `activity_log` table
 - Empty state for new users
+- Meetings widget exists in sidebar
 
 ### What Is Broken/Incomplete
-- **Revenue chart uses `Math.random()`** — `getRevenueData()` in `src/app/dashboard/page.tsx:18-25` generates random data. No real revenue data is displayed. This is labeled as "mock" in comments but visible to real users.
-- **Meeting Scheduler shows hardcoded demo data** — `getMeetings()` in `src/app/dashboard/page.tsx:28-48` returns hardcoded meetings. The meeting database table is never queried on the main dashboard.
-- **Stats "Completed This Month" counts ALL completed projects** — The query in `src/lib/data.ts:83-89` has no date filter for "this month." It shows total completed, not monthly.
+- **Meeting widget shows hardcoded demo data** — `getMeetingsForAgency` query exists in `src/lib/db.ts` but the main dashboard may still use demo meetings. Verify.
 
 ---
 
 ## Project Detail Page
 
-**Status: MOSTLY COMPLETE (80%)**
+**Status: 95% COMPLETE**
 
 ### What Works
 - Full project information display (name, type, description, priority, industry, budget, due date)
@@ -56,198 +54,181 @@
 - Reminder settings (enable/disable auto-reminder, set frequency)
 - Portal link card with token display and rotation
 - Edit project modal with all fields
+- `syncProjectProgress` called after every approval/rejection
 
 ### What Is Incomplete
-- **Progress field inconsistency** — `project.progress` stores an integer (0–100) but `calculateProjectProgress()` in `src/lib/data.ts:7-28` computes it from checklist items. These two values can diverge. When a checklist item is approved, the `progress` column is NOT automatically updated.
-- **Timeline events** — UI exists to display timeline, but the component for _editing_ timeline events (adding/removing milestones) needs verification.
-- **"Download All" button** — `DownloadAllButton.tsx` exists as a 763-byte file — likely a stub. Verify actual download functionality.
-- **ChatCard** — `ChatCard.tsx` exists as 1,531 bytes, appears to be a placeholder messaging UI.
-- **TodoListCard** — `TodoListCard.tsx` exists; verify if wired to actual data or demo only.
+- **Rejection email has no portal link** — `sendRejectionEmailAction` is called without a `portalLink` argument (the plaintext token is not stored, by design). The email tells the client their item was rejected but doesn't link back to the portal.
 
 ---
 
 ## Client Portal
 
-**Status: MOSTLY COMPLETE (85%)**
+**Status: 80% COMPLETE**
 
 ### What Works
 - Token-based passwordless access via `/portal/[token]`
 - Token verification with SHA-256 hashing and expiry checking (`src/lib/verify-portal-token.ts`)
 - Client can view all checklist items and their status
-- Client can upload files to checklist items via UploadThing
-- Rejection reasons are shown to the client
+- Rejection reasons shown to the client
 - Activity is logged when client uploads
 
-### What Is Incomplete/Problematic
-- **UploadThing middleware has NO authentication** — The `clientSubmission` uploader in `src/lib/uploadthing.ts:21-23` returns `{ uploadedBy: "client" }` but does NOT verify the portal token. Any person with the upload URL could upload files without a valid portal session.
-- **Portal tokens expire in 30 days** — For long-running projects (common in agencies), the portal link sent to the client will expire. No mechanism exists to automatically renew tokens for active projects.
-- **No file type validation beyond extension** — UploadThing accepts defined file types, but the `acceptedFormats` field on checklist items is stored as a comma-separated string (e.g., `"png,svg,pdf"`) and is NOT enforced server-side.
+### What Is Incomplete/Needs Verification
+- **R2 upload flow needs end-to-end test** — `src/lib/r2.ts` provides `getUploadUrl` (presigned PUT) and `generateKey`. The portal UI must call the presign API, upload directly to R2, then save the returned URL. This flow needs to be verified working.
+- **Portal token expiry** — 30-day expiry. For long projects, the link expires. No auto-renewal mechanism exists.
+- **`file_uploaded` notification not created** — When a client submits, the agency gets no in-app notification or email.
 
 ---
 
 ## Clients Management
 
-**Status: FUNCTIONAL BUT NEEDS IMPROVEMENT (70%)**
+**Status: 85% COMPLETE**
 
 ### What Works
-- Client listing page exists
-- Client detail page (`ClientDetailClient.tsx`)
-- Invite client flow (generates portal token hash, saves to DB)
+- Client listing
+- Client detail page
+- Invite client flow (generates portal token hash, saves to PostgreSQL)
 - Client limit enforcement based on plan
+- Portal token rotation
 
 ### What Is Incomplete
-- **No dedicated clients list page** — `/dashboard/clients` has a `[id]` subdirectory but no `page.tsx` at the clients root. Navigation likely goes directly to client detail.
-- **Client edit** — No evidence of a client name/email update flow.
-- **Client deletion** — No UI evidence for deleting a client from dashboard.
+- **Client edit** — No name/email update flow confirmed
+- **Client deletion** — No UI evidence for deleting a client
 
 ---
 
 ## Leads CRM
 
-**Status: FUNCTIONAL (70%)**
+**Status: 90% COMPLETE**
 
 ### What Works
-- Full Kanban-style pipeline view (`LeadsDashboard` component)
-- Create lead with full metadata (contact name, company, email, phone, location, source, estimated value, stage, follow-up date, notes)
-- Update lead stage with drag-and-drop (`@hello-pangea/dnd`)
-- Soft delete leads (no data loss)
+- Full Kanban-style pipeline view
+- Create lead with full metadata
+- Update lead stage with drag-and-drop
+- Soft delete leads (with ownership verification — **fixed**)
 - Convert lead to client (creates client record, marks lead as "won")
 - Pipeline metrics (open leads, pipeline value, win rate, won this month)
 - Lead activity logging
 
-### What Is Problematic
-- **`softDeleteLeadsAction` has no ownership verification** — Lines 145-151 in `src/app/actions/leads.ts` update `isDeleted` for any `leadId` in the array without checking if `lead.agencyId === session.agency.id`. A malicious user could delete another agency's leads.
-- **`getAgencyLeads` filters by `isDeleted = false`** — Soft-deleted leads cannot be recovered from the UI (no trash/restore view).
-- **No lead import functionality** — Agencies likely want to import leads from CSV or CRM.
+### What Is Incomplete
+- **No invite email sent on lead-to-client conversion** — The portal link is generated but no email is sent
+- **No lead import** — CSV import not implemented
 
 ---
 
 ## Analytics
 
-**Status: PARTIALLY COMPLETE (60%)**
+**Status: 45% COMPLETE**
 
 ### What Works
 - Total projects, total clients, completion rate, average progress metrics
 - Projects by status bar chart
-- Insights section
 - Plan-gating for `fullAnalytics` feature
 
 ### What Is Incomplete
-- **All metrics are point-in-time** — No time-series data (no "trend" data). The trend arrows shown are computed from the current value alone (e.g., `trend={data.completionRate >= 50 ? "up" : "down"}`), not from a comparison to a previous period.
-- **No revenue analytics** — Revenue chart on dashboard is mocked; analytics page has no revenue data.
-- **No lead analytics** — Leads/CRM data not included in analytics.
-- **No file analytics** — No storage usage, file upload frequency, etc.
+- **No time-series data** — All metrics are point-in-time. Trend arrows are computed from current value, not from historical comparison.
+- **No revenue analytics** — Dashboard revenue chart was removed with the old Razorpay stack and not replaced.
+- **No lead analytics** — Leads/CRM data not in analytics.
 
 ---
 
 ## Meetings
 
-**Status: FRONTEND ONLY / PLACEHOLDER (40%)**
+**Status: 30% COMPLETE**
 
 ### What Exists
-- Database schema (`meeting` table: id, agencyId, projectId, title, description, meetingDate, durationMinutes, meetLink, reminderMinutes, status)
-- `MeetingsCalendar.tsx` (18KB) — Calendar UI with scheduling
-- Dashboard sidebar shows hardcoded demo meetings
+- Database schema (`meeting` table: full schema with agencyId, projectId, title, meetingDate, etc.)
+- `MeetingsCalendar.tsx` — Calendar UI with scheduling
+- `getMeetingsForAgency` DB query in `src/lib/db.ts`
 
-### What Is Broken
-- **Main dashboard `getMeetings()` never queries the database** — Returns hardcoded demo data
-- **No server actions for meetings** — No `createMeeting`, `updateMeeting`, `deleteMeeting` actions exist
-- **No meeting page wiring** — The `/dashboard/meetings/page.tsx` (1,414 bytes) exists but unclear if it queries DB or renders static UI
-- **No meeting reminder** — The `reminderMinutes` field exists in schema but is never used
+### What Is Missing
+- **No server actions** — No `createMeeting`, `updateMeeting`, `deleteMeeting` actions exist
+- **No meeting reminder emails** — `reminderMinutes` field exists in schema but is never used
 
 ---
 
 ## Notifications
 
-**Status: MOSTLY COMPLETE (70%)**
+**Status: 60% COMPLETE**
 
 ### What Works
-- Notification bell in header with unread count badge
-- In-app notification list (`NotificationsPageClient.tsx`)
-- Notification creation when checklist items are approved/rejected
+- Notification bell with unread count badge
+- In-app notification list
+- Notification creation on checklist approve/reject
 - Mark as read / mark all read
-- Notification types: `file_uploaded`, `deadline_approaching`, `status_changed`, `reminder_sent`
+- `checkDeadlineNotifications()` is called by the cron endpoint
 
 ### What Is Incomplete
-- **`file_uploaded` notifications are NOT created** — The UploadThing `onUploadComplete` callback only logs to console. No notification is created when a client submits a file.
-- **`checkDeadlineNotifications()` is never called** — This function exists in `src/app/actions/notifications.ts:112-163` but there is no cron job or trigger that calls it.
-- **No email delivery for agency notifications** — Notifications are in-app only. When a client uploads a file, the agency does not get an email.
+- **`file_uploaded` notifications not created** — When a client uploads, no notification is inserted.
+- **No email delivery for agency notifications** — Notifications are in-app only. Agency doesn't get an email when a client uploads.
 
 ---
 
-## Billing (Razorpay)
+## Billing (Dodo Payments)
 
-**Status: PARTIALLY COMPLETE (55%)**
+**Status: 85% COMPLETE**
 
 ### What Works
-- Plan configuration in `plan-config.ts` (Free, Pro, Ultra, Custom with pricing)
+- Plan configuration in `plan-config.ts` (Free, Pro, Ultra, Custom)
 - Plan enforcement via `checkProjectLimit`, `checkClientLimit`, `requireFeature`
-- Billing page with current plan display, usage meters, plan comparison
-- Razorpay subscription creation API route (`/api/razorpay/create-subscription`)
-- Razorpay webhook handler (`/api/razorpay/webhook`) with idempotency
-- Subscription status tracking in DB
-- Payment history recording
-- Subscription cancellation action
+- Billing page with current plan display and usage meters
+- Dodo Payments checkout creation (`POST /api/billing/checkout`)
+- Webhook handler with HMAC-SHA256 verification (crash bug **fixed**)
+- Idempotency via `webhookEvent` table
+- Plan upgrade on `subscription.active` event (premature upgrade bug **fixed**)
+- Plan downgrade to `free` on `subscription.cancelled`/`expired`/`paused`
+- Subscription cancellation endpoint
 
-### What Is Broken/Incomplete
-- **Webhook emails use hardcoded `billing@example.com`** — Lines 115 and 122 in `src/app/api/razorpay/webhook/route.ts` use hardcoded fallback email addresses instead of the actual agency email.
-- **Subscription cancellation does NOT downgrade plan immediately** — The `subscription.cancelled` webhook sets subscription status to "cancelled" but does NOT set `agency.plan = "free"`. The plan downgrade logic is commented as "scheduled or handled here."
-- **Payment status values are inconsistent** — The schema uses `["created","authorized","captured","failed","refunded"]` but billing page checks for `payment.status === 'success' || payment.status === 'paid'` (neither of which are valid enum values).
-- **`dev-bypass` route exists** — `/api/razorpay/dev-bypass` exists which could be a security issue if deployed to production.
-- **No Stripe integration** — Only Razorpay, which is India-centric and has limited US support. For US market focus, this is a significant gap.
-- **`checkProjectLimit` has a query bug** — The `where` clause at `src/lib/check-plan.ts:59-64` is incomplete — it counts ALL projects but the comment says "all statuses except complete are active." The filter `sql\`project.status != 'complete'\`` is missing.
+### What Is Incomplete
+- **No Stripe** — Dodo Payments is the only billing option; limited US payment methods
 
 ---
 
 ## Settings
 
-**Status: PARTIALLY COMPLETE (65%)**
+**Status: 80% COMPLETE**
 
 ### What Works
-- Notification preferences (email notifications, auto reminders, weekly digest toggles) — actually saved to DB
+- Notification preferences (email notifications, auto reminders, weekly digest) — saved to DB
 - Account page exists
 
 ### What Is Incomplete
-- **Profile editing** — No evidence of name/email update forms connected to server actions in the settings page
-- **Agency name/logo editing** — No agency profile update functionality
-- **Password change** — Better Auth supports this but no UI exists
-- **Danger zone** — Delete account button may exist but connection to Better Auth `deleteUser` needs verification
+- **Profile editing** — No name/email update form connected to server actions
+- **Agency name/logo editing** — Not implemented
+- **Password change UI** — Backend supports it; no UI
+
+---
+
+## Infrastructure
+
+**Status: 85% COMPLETE**
+
+### What Exists
+- Multi-stage Docker build (deps → builder → runner)
+- Docker Compose: PostgreSQL 16 + Redis 7 + Next.js app
+- PostgreSQL data volume (`postgres_data`)
+- Redis data volume with AOF persistence
+- GitHub Actions CI pipeline
+- Drizzle migrations in `drizzle-pg/`
+- `.env.example` with all required variables (**CRON_SECRET added** in this PR)
+
+### What Is Missing/Needs Attention
+- **`BETTER_AUTH_URL` in Compose is localhost** — Must be updated to the real domain for production VPS deployment
+- **No monitoring/error tracking** — No Sentry, Datadog, or equivalent
+- **No staging environment** — Only local dev + production Docker config
+- **Redis is required for rate limiting** — `rate-limit.ts` fails closed (blocks requests) if Redis is down, which is correct but may surprise operators
 
 ---
 
 ## Landing Page
 
-**Status: MOSTLY COMPLETE (80%)**
+**Status: 90% COMPLETE**
 
 ### What Works
-- Hero section, Problem section, Features section, Pricing section, FAQ section, Testimonials section, Users section, CTA section, Footer
-- Pricing section reads from `plan-config.ts` (single source of truth)
-- Blog (7 articles with content)
+- Hero, Problem, Features, Pricing, FAQ, Testimonials, CTA, Footer — all functional
+- Pricing reads from `plan-config.ts`
+- Blog (7 articles)
 - Legal pages (Privacy, Terms, GDPR, Cookies)
 
-### What Is Incomplete/Problematic
-- **Testimonials are static/demo** — No real customer testimonials yet
-- **"Users" section** — Shows logos of companies; all are demo placeholders
-- **Pricing section shows different values than plan-config** — The billing page comparison table shows "2 projects" for Free but `PLANS.free.limits.maxActiveProjects = 10`. This inconsistency must be fixed.
-- **No actual blog CMS** — Blog content is hardcoded in JSX. No authoring workflow.
-
----
-
-## Infrastructure State
-
-**Status: GOOD FOUNDATION (70%)**
-
-### What Exists
-- Multi-stage Docker build (deps → builder → runner)
-- Docker Compose with bind-mount volume for SQLite persistence
-- Litestream installed in Docker image (SQLite replication to S3)
-- GitHub Actions CI pipeline
-- Drizzle migrations (auto-applied on server start via `instrumentation.ts`)
-- `.env.example` with all required variables documented
-
-### What Is Missing
-- **No `litestream.yml` config in the Docker image** — The Dockerfile CMD runs `litestream replicate --config /etc/litestream.yml` but no `litestream.yml` is copied into the image. This means litestream will fail silently at startup.
-- **No staging environment** — Only local dev + production Docker config
-- **No monitoring/error tracking** — No Sentry, Datadog, or equivalent
-- **Redis is optional** — Rate limiting silently fails without Redis; this should be handled more gracefully
-- **`UPLOADTHING_SECRET` env var** — Not in `.env.example`; required for file uploads to work
+### What Is Incomplete
+- Testimonials are static/demo content
+- Company logos section is demo placeholders
